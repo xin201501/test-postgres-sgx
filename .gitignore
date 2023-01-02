@@ -3,4 +3,3 @@ Cargo.lock
 *.o
 *.a
 *.so
-*.pem
