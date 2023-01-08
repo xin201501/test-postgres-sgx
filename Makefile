@@ -21,6 +21,11 @@ PG_DETAIL_VERSION_NUMBER ?= 15.1
 PG_HOME = /home/$(USER)/.pgx/$(PG_DETAIL_VERSION_NUMBER)/pgx-install
 PG_DATA = /home/xin201501/.pgx/data-$(PG_MAJOR_VERSION_NUMBER)
 
+PG_CONFIG = $(PG_HOME)/bin/pg_config
+PGXS := $(shell $(PG_CONFIG) --libs)
+
+# NO_PGXS :=
+# include $(PG_HOME)/lib/postgresql/pgxs/src/makefiles/pgxs.mk
 ####### debug or release ########
 DEBUG ?= 1
 
@@ -53,9 +58,15 @@ else
 	SGX_BIN_PATH := $(SGX_SDK)/bin/x64
 endif
 
-ifeq ($(DEBUG), 1)
-SGX_COMMON_CFLAGS += -g
-endif 
+ifeq ($(SGX_DEBUG), 1)
+	SGX_COMMON_CFLAGS += -O0 -g
+	Rust_Build_Flags :=
+	Rust_Build_Out := debug
+else
+	SGX_COMMON_CFLAGS += -O3
+	Rust_Build_Flags := --release
+	Rust_Build_Out := release
+endif
 
 SGX_EDGER8R := $(SGX_BIN_PATH)/sgx_edger8r
 ifneq ($(SGX_MODE), HYPER)
@@ -82,7 +93,7 @@ Enclave_EDL_Files := enclave/enclave_t.c enclave/enclave_t.h app/enclave_u.c app
 # App_Rust_Flags := --release
 App_Src_Files := $(shell find app/ -type f -name '*.rs') $(shell find app/ -type f -name 'Cargo.toml')
 App_Include_Paths := -I ./app -I$(SGX_SDK)/include -I$(CUSTOM_COMMON_PATH)/inc -I$(CUSTOM_EDL_PATH)
-App_C_Flags := $(CFLAGS) -fPIC -Wno-attributes $(App_Include_Paths)
+App_C_Flags := $(CFLAGS) $(SGX_COMMON_CFLAGS) -fPIC -Wno-attributes $(App_Include_Paths)
 
 App_Enclave_u_Object := $(CUSTOM_LIBRARY_PATH)/libenclave_u.a
 
@@ -102,9 +113,10 @@ $(error Only supports building with build_std strategy!!)
 endif
 endif
 
+export CARGO_FEATURE_STD=1
 ifeq ($(BUILD_STD), cargo)
-	Rust_Build_Std := --release -Z build-std=core,alloc
-	Rust_Std_Features := --features backtrace,stdio,thread,untrusted_fs,unsupported_process
+	Rust_Build_Std := $(Rust_Build_Flags) -Z build-std=core,alloc
+	Rust_Std_Features := --features backtrace,net,thread,untrusted_time,untrusted_fs,unsupported_process
 	Rust_Target_Flags := --target $(Rust_Target_Path)/$(Rust_Build_Target).json
 	Rust_Sysroot_Path := $(CURDIR)/sysroot
 	Rust_Sysroot_Flags := RUSTFLAGS="--sysroot $(Rust_Sysroot_Path)"
@@ -120,19 +132,17 @@ endif
 RustEnclave_Src_Files := $(shell find enclave/ -type f -name '*.rs') $(shell find enclave/ -type f -name 'Cargo.toml')
 RustEnclave_Include_Paths := -I$(CUSTOM_COMMON_PATH)/inc -I$(CUSTOM_COMMON_PATH)/inc/tlibc -I$(CUSTOM_EDL_PATH)
 
-RustEnclave_Link_Libs := -L$(SGX_LIBRARY_PATH) -L$(CUSTOM_LIBRARY_PATH)  -lenclave
-RustEnclave_Compile_Flags := $(ENCLAVE_CFLAGS) $(RustEnclave_Include_Paths)
+PG_LIBS := -L /home/xin201501/.pgx/15.1/pgx-install/lib -lpgcommon -lpgfeutils -lpgport_shlib -lpgtypes
+
+RustEnclave_Link_Libs := -L$(SGX_LIBRARY_PATH) -L$(CUSTOM_LIBRARY_PATH) -lenclave 
+RustEnclave_C_Flags := $(CFLAGS) $(ENCLAVE_CFLAGS) $(SGX_COMMON_CFLAGS) $(RustEnclave_Include_Paths)
 RustEnclave_Link_Flags := -Wl,--no-undefined -nostdlib -nodefaultlibs -nostartfiles \
 	-Wl,--whole-archive -Wl,--no-whole-archive \
 	-Wl,--start-group $(RustEnclave_Link_Libs) -Wl,--end-group \
 	-Wl,--version-script=enclave/enclave.lds \
 	$(ENCLAVE_LDFLAGS)
 
-ifeq ($(DEBUG),	1)
-	RustEnclave_Out_Path := ./enclave/target/$(Rust_Build_Target)/debug
-else
-	RustEnclave_Out_Path := ./enclave/target/$(Rust_Build_Target)/release
-endif
+RustEnclave_Out_Path := ./enclave/target/$(Rust_Build_Target)/$(Rust_Build_Out)
 
 RustEnclave_Lib_Name := $(RustEnclave_Out_Path)/libsample.a
 RustEnclave_Name := $(CUSTOM_BIN_PATH)/enclave.so
@@ -160,14 +170,17 @@ $(App_Enclave_u_Object): app/enclave_u.o
 
 ######## Enclave Objects ########
 
+# include $(PGXS)
+# PG_CFLAGS += "-Wno-error"
 enclave/enclave_t.o: $(Enclave_EDL_Files)
-	@$(CC) $(RustEnclave_Compile_Flags) -c enclave/enclave_t.c -o $@
+	@echo $(PGX_LIBS)
+	$(CC) $(RustEnclave_C_Flags) $(PG_LIBS)  -c enclave/enclave_t.c -o $@
 
 $(RustEnclave_Name): enclave/enclave_t.o enclave
 	@mkdir -p $(CUSTOM_LIBRARY_PATH)
 	@mkdir -p $(CUSTOM_BIN_PATH)
 	@cp $(RustEnclave_Lib_Name) $(CUSTOM_LIBRARY_PATH)/libenclave.a
-	@$(CXX) enclave/enclave_t.o -o $@ $(RustEnclave_Link_Flags)
+	$(CXX) enclave/enclave_t.o -o $@ $(RustEnclave_Link_Flags)
 	@echo "LINK => $@"
 
 $(RustEnclave_Signed_Name): $(RustEnclave_Name) enclave/config.xml
@@ -179,7 +192,7 @@ $(RustEnclave_Signed_Name): $(RustEnclave_Name) enclave/config.xml
 
 .PHONY: app
 app: $(App_Enclave_u_Object)
-	@cd app && SGX_SDK=$(SGX_SDK) PATH=$(PATH):$(PG_HOME)/bin cargo pgx install $(PGX_Build_Flags)
+	@cd app && SGX_SDK=$(SGX_SDK) PATH=$(PATH):$(PG_HOME)/bin cargo build $(PGX_Build_Flags)
 
 ######## Build Enclave ########
 
@@ -190,8 +203,14 @@ ifeq ($(BUILD_STD), cargo)
 
 	@rm -rf $(Rust_Sysroot_Path)
 	@mkdir -p $(Rust_Sysroot_Path)/lib/rustlib/$(Rust_Build_Target)/lib
-	@cp -r $(Rust_Target_Path)/std/target/$(Rust_Build_Target)/release/deps/* $(Rust_Sysroot_Path)/lib/rustlib/$(Rust_Build_Target)/lib
+	@cp -r $(Rust_Target_Path)/std/target/$(Rust_Build_Target)/$(Rust_Build_Out)/deps/* $(Rust_Sysroot_Path)/lib/rustlib/$(Rust_Build_Target)/lib
+	
+	@cd $(Rust_Target_Path)/proc_macro && $(Rust_Sysroot_Flags) cargo build $(Rust_Target_Flags) $(RustEnclave_Build_Flags)
+	@cp -r $(Rust_Target_Path)/proc_macro/target/$(Rust_Build_Target)/$(Rust_Build_Out)/deps/* $(Rust_Sysroot_Path)/lib/rustlib/$(Rust_Build_Target)/lib
 
+	
+	
+	
 	@cd enclave && $(Rust_Sysroot_Flags) cargo build $(Rust_Target_Flags) $(RustEnclave_Build_Flags)
 else
 	@cd enclave && $(Rust_Unstable_Flags) RUST_TARGET_PATH=$(Rust_Target_Path) xargo build --target $(Rust_Build_Target) $(RustEnclave_Build_Flags)
@@ -210,5 +229,6 @@ clean:
 	@cd enclave && cargo clean
 	@cd app && cargo clean
 	@cd $(Rust_Target_Path)/std && cargo clean
+	@cd $(Rust_Target_Path)/proc_macro && cargo clean
 	@rm -rf $(CUSTOM_BIN_PATH) $(CUSTOM_LIBRARY_PATH) $(CUSTOM_SYSROOT_PATH)
 	@rm -rf $(PG_DATA)/enclave.signed.so

@@ -177,38 +177,40 @@ fn test_spi(title: &str) -> i64 {
 }
 
 #[pg_extern]
-fn test_return_set_of_data(
-    insert_text1: &str,
-    insert_text2: &str,
-) -> TableIterator<'static, (name!(id, Option<i64>), name!(title, Option<String>))> {
+fn test_return_set_of_data(insert_text1: &str, insert_text2: &str) {
+    extern "C" {
+        fn test_return_set_of_data(
+            eid: EnclaveId,
+            insert_text1: *const u8,
+            insert_text1_len: usize,
+            insert_text2: *const u8,
+            insert_text2_len: usize,
+        ) -> SgxStatus;
+    }
+    let enclave = match SgxEnclave::create(ENCLAVE_FILE, true) {
+        Ok(enclave) => {
+            info!("[+] Init Enclave Successful {}!", enclave.eid());
+            enclave
+        }
+        Err(err) => {
+            error!("[-] Init Enclave Failed {}!", err.as_str());
+        }
+    };
     // let mut results = vec![];
-    Spi::connect(|client| {
-        //使用update函数更改表内的数据
-        client.update(
-            //先删除表中所有数据，再插入两条数据
-            r#"
-            DELETE FROM spi_example;
-            INSERT INTO spi_example (title) VALUES ($1);
-            INSERT INTO spi_example (title) VALUES ($2);
-            "#,
-            None,
-            Some(vec![
-                (PgBuiltInOids::TEXTOID.oid(), insert_text1.into_datum()),
-                (PgBuiltInOids::TEXTOID.oid(), insert_text2.into_datum()),
-            ]),
-        );
-        Ok(Some(()))
-    });
-    info!("end modifying table spi_example");
-    let result = Spi::connect(|client| {
-        let results: Vec<_> = client
-            .select("SELECT * FROM spi_example;", None, None)
-            .map(|row| (row["id"].value(), row["title"].value()))
-            .collect();
-        Ok(Some(results))
-    })
-    .unwrap();
-    TableIterator::new(result.into_iter())
+    let status = unsafe {
+        test_return_set_of_data(
+            enclave.eid(),
+            insert_text1.as_ptr(),
+            insert_text1.len(),
+            insert_text2.as_ptr(),
+            insert_text2.len(),
+        )
+    };
+
+    match status {
+        SgxStatus::Success => info!("[+] test_return_set_of_data success!"),
+        _ => error!("[-] test_return_set_of_data failed {}!", status.as_str()),
+    }
 }
 //使用select函数只读取但不更改表内的数据
 

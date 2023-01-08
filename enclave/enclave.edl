@@ -16,11 +16,15 @@
 // under the License.
 
 enclave {
-    from "sgx_tstd.edl" import *;
     from "sgx_stdio.edl" import *;
     from "sgx_file.edl" import *;
     from "sgx_tprotected_fs.edl" import *;
     from "sgx_thread.edl" import *;
+    from "sgx_net.edl" import *;
+    from "sgx_fs.edl" import *;
+    from "sgx_process.edl" import *;
+    from "sgx_tstd.edl" import *;
+
     trusted {
         /* define ECALLs here. */
 
@@ -42,5 +46,6 @@ enclave {
             [in] uint8_t iv[12],
             [in] uint8_t mac[16],
             [out, size=len] uint8_t* plaintext);
+        public void test_return_set_of_data([in,size=insert_text1_len]const uint8_t* insert_text1,size_t insert_text1_len,[in,size=insert_text2_len] const uint8_t* insert_text2,size_t insert_text2_len);
     };
 };

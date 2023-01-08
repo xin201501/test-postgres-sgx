@@ -1,3 +1,8 @@
+sysroot
+bin
+lib
+enclave_*.c
+enclave_*.h
 target
 Cargo.lock
 *.o

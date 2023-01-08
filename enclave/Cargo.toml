@@ -25,10 +25,18 @@ edition = "2021"
 name = "sample"
 crate-type = ["staticlib"]
 
+
 [features]
-default = []
+default = ["pg15"]
+pg11 = ["pgx/pg11"]
+pg12 = ["pgx/pg12"]
+pg13 = ["pgx/pg13"]
+pg14 = ["pgx/pg14"]
+pg15 = ["pgx/pg15"]
+
 
 [dependencies]
 sgx_crypto = { path = "../../../sgx_crypto" }
 sgx_types = { path = "../../../sgx_types" }
 cfunction = { path = "cfunction" }
+pgx= {version = "0.6.1",default-features = false}

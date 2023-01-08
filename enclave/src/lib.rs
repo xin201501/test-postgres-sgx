@@ -17,6 +17,8 @@
 
 /// C/C++ enclave functions
 pub use cfunction::*;
+use pgx::prelude::TableIterator;
+use pgx::*;
 use sgx_crypto::aes::gcm::{Aad, AesGcm, Nonce};
 use sgx_types::types::{AESGCM_IV_SIZE, KEY_128BIT_SIZE, MAC_128BIT_SIZE};
 use std::fs::OpenOptions;
@@ -225,4 +227,50 @@ pub unsafe extern "C" fn write_file(
         .unwrap();
     let text = slice::from_raw_parts(text, text_len);
     file.write_all(text).unwrap();
+}
+
+#[no_mangle]
+pub extern "C" fn test_return_set_of_data(
+    insert_text1: *const u8,
+    insert_text1_len: usize,
+    insert_text2: *const u8,
+    insert_text2_len: usize,
+) {
+    // let mut results = vec![];
+    // let insert_text1 = unsafe {
+    //     let slice = slice::from_raw_parts(insert_text1, insert_text1_len);
+    //     core::str::from_utf8(slice).unwrap()
+    // };
+    // let insert_text2 = unsafe {
+    //     let slice = slice::from_raw_parts(insert_text2, insert_text2_len);
+    //     core::str::from_utf8(slice).unwrap()
+    // };
+    // Spi::connect(|client| {
+    //     //使用update函数更改表内的数据
+    //     client.update(
+    //         //先删除表中所有数据，再插入两条数据
+    //         r#"
+    //         DELETE FROM spi_example;
+    //         INSERT INTO spi_example (title) VALUES ($1);
+    //         INSERT INTO spi_example (title) VALUES ($2);
+    //         "#,
+    //         None,
+    //         Some(vec![
+    //             (PgBuiltInOids::TEXTOID.oid(), insert_text1.into_datum()),
+    //             (PgBuiltInOids::TEXTOID.oid(), insert_text2.into_datum()),
+    //         ]),
+    //     );
+    //     Ok(Some(()))
+    // });
+    // info!("end modifying table spi_example");
+    // let result = Spi::connect(|client| {
+    //     let results: Vec<(Option<i64>, Option<String>)> = client
+    //         .select("SELECT * FROM spi_example;", None, None)
+    //         .map(|row| (row["id"].value(), row["title"].value()))
+    //         .collect();
+    //     Ok(Some(results))
+    // })
+    // .unwrap();
+    // let _ = TableIterator::new(result.into_iter());
+    // info!("[test return set of data]:function ended successfully!")
 }
