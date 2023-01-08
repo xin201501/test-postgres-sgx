@@ -1,10 +1,13 @@
 sysroot
 bin
 lib
-enclave_*.c
-enclave_*.h
 target
+
 Cargo.lock
+
+enclave_*.h
+enclave_*.c
+
 *.o
 *.a
 *.so
